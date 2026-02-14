@@ -30,30 +30,26 @@ class BinFile {
 	/*** File Metadata Functions **********************************************/
 	std::string getFilename();
 	
-	/*** File Reading Functions ***********************************************/
-	//Push a byte to the byteArray. This will automatically flush the array to 
-	//the binary file when the array becomes full.
+	/*** File Reading (for dump: push bytes to file) **************************/
 	void pushByteToArray(const char byte);
-	
-	//Flushes the byteArray to the file, returns exit status.
-	//0 = success		1 = failure
 	int flushArrayToFile();
 	
+	/*** File Reading (for flash: pull bytes from file) ***********************/
+	// Returns true and sets byte if a byte was read; false on EOF.
+	bool pullByteFromFile(char &byte);
 	
-	/*** File Writing Functions ***********************************************/
-	
-
+	// Whether the file was opened for reading (mode 'r')
+	bool isReadMode() const { return readMode; }
 
 	private:
-	std::fstream file; //File object
-	char *filename; //Filename string
-	
-	//How many bytes can be be in the byteArray before it flushes
+	std::fstream file;
+	char *filename;
 	#define MAX_RAM_BYTES 10485760
-	//Pointer to heap array where data will be stored before pushing to a file.
 	char *byteArrayPtr;
-	//Current byte address to read or write in the 
 	unsigned int byteArrayPos = 0;
+	bool readMode = false;
+	// For read mode: bytes currently in buffer (0 when buffer exhausted)
+	unsigned int byteArrayLen = 0;
 }; //class BinFile
 
 

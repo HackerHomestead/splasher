@@ -22,11 +22,11 @@ BinFile::BinFile(const char *inptFN, const char mode) {
 	//Copy the input string to the new char array at filename
 	strcpy(this->filename, inptFN);
 	
-	//if mode is 'r' (read) open file in read mode
 	if(mode == 'r') {
+		readMode = true;
 		file.open(filename, std::ios::in | std::ios::binary);
 	} else if(mode == 'w') {
-	//if mode is 'w' (write) open file in output mode, truncate
+		readMode = false;
 		file.open(filename, std::ios::out | std::ios::trunc | std::ios::binary);
 	} else {
 	//If the mode is unrecognised, error
@@ -44,18 +44,12 @@ BinFile::BinFile(const char *inptFN, const char mode) {
 	byteArrayPtr = new char[MAX_RAM_BYTES];
 }
 
-//Destructor deletes the Byte Array from RAM and closes the file
 BinFile::~BinFile() {
-	//Safety flush the byteArray
-	if(byteArrayPos != 0) flushArrayToFile();
-
-	//Close the binary file
-	this->file.close();
-
-	//Delete the RAM array
-	delete byteArrayPtr;
-	
-	std::cout << "destruct filemanager BinFile success\n";
+	if (!readMode && byteArrayPos != 0)
+		flushArrayToFile();
+	file.close();
+	delete[] filename;
+	delete[] byteArrayPtr;
 }
 
 std::string BinFile::getFilename() {
@@ -76,19 +70,21 @@ void BinFile::pushByteToArray(const char byte) {
 	++byteArrayPos;
 }
 
-//Flushes the byteArray to the file, returns exit status.
-//0 = success		1 = failure
 int BinFile::flushArrayToFile() {
-	//Check the file is open
-	
-	//Check the array is OK
-	
-	//Dump the array, of arrayPos bytes
-	this->file.write(byteArrayPtr, byteArrayPos);
-	
-	//Reset the byte array pos
+	if (byteArrayPos == 0) return 0;
+	file.write(byteArrayPtr, byteArrayPos);
 	byteArrayPos = 0;
-	
-	//Successful operation
 	return 0;
+}
+
+bool BinFile::pullByteFromFile(char &byte) {
+	if (!readMode) return false;
+	if (byteArrayPos >= byteArrayLen) {
+		file.read(byteArrayPtr, MAX_RAM_BYTES);
+		byteArrayLen = static_cast<unsigned int>(file.gcount());
+		byteArrayPos = 0;
+		if (byteArrayLen == 0) return false;
+	}
+	byte = byteArrayPtr[byteArrayPos++];
+	return true;
 }

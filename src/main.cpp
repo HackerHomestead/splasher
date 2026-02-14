@@ -26,14 +26,26 @@ const char *copyright = "\nsplasher 2023 ADBeta(c)";
 const char *shortHelp = "Usage: splasher [binary file] [options]\n\
 use --help for full help information\n";
 
-const char *longHelp =  "Usage: splasher [binary file] [options]\n\n\
-By default .......TODO \n\
-Options:\n\
--h, --help\t\tShow this help message\n\
--b, --bytes\t\tHow many bytes to read from the device. Allows K and M suffix \
-to specify KiB or MiB\n\
--s, --speed\t\t(in KHz) The speed of the CLK pin cycle, All other timings \
-derive from this. (\"-s max\" unlimits the bus speed)\n";
+const char *longHelp =
+	"Usage: splasher <file> [options]\n\n"
+	"By default splasher dumps (reads) from the flash chip to the given file.\n"
+	"Requires -b/--bytes for dump and write. Run with sudo (pigpio).\n\n"
+	"Options:\n"
+	"  -h, --help       Show this help\n"
+	"  -b, --bytes      Bytes to read/write (required for dump/write). Suffixes: K, M (e.g. 16M)\n"
+	"  -s, --speed     SPI speed in KHz (1-1000), or \"max\". Also: --speed=500\n"
+	"  -o, --offset     Start address in bytes (default 0). Suffixes: K, M\n"
+	"  --jedec          Read and print JEDEC ID (manufacturer, type, capacity), then exit\n"
+	"  -w, --write      Flash (write) file to device; requires -b; -o = start address\n"
+	"  -e, --erase      Erase: full chip, or from -o for -b bytes\n"
+	"  -i, --interface  Interface: spi (default), dspi, qspi, i2c\n\n"
+	"Examples:\n"
+	"  splasher output.bin -b 16M\n"
+	"  splasher out.bin -b 16M -s 500 -o 64K\n"
+	"  splasher --jedec\n"
+	"  splasher firmware.bin -b 256K -w\n"
+	"  splasher /dev/null -e\n"
+	"  splasher /dev/null -b 64K -o 0 -e\n";
 
 
 const char *speedNotValid = "Speed (in KHz) input is invalid\n";
@@ -44,6 +56,7 @@ const char *bytesNotValid = "Bytes argument input is invalid. valid input e.g. \
 -b 100    -b 100K    -b 2M\n";
 const char *bytesNotSpecified = "Bytes to read has not been specified\n";
 const char *bytesTooLarge = "Bytes is too large, byte limit is 256MiB\n";
+const char *offsetNotValid = "Offset argument invalid. e.g. -o 0  -o 64K  -o 1M\n";
 } //namespace message
 
 /*** Helper functions *********************************************************/
@@ -128,18 +141,13 @@ unsigned long convertBytes(std::string byteString) {
 
 /******************************************************************************/
 
-//Global BinFile object. Gets created via read or write command from CLI
-BinFile *binFile; //TODO move to main
-
 /*** Main *********************************************************************/
 int main(int argc, char *argv[]){
 	/*** Generic pigpio stuff *************************************************/
-	if(gpioInitialise() < 0) { //TODO message and return exit_failure
+	if(gpioInitialise() < 0) {
 		std::cerr << "Error: Failed to initialise the GPIO" << std::endl;
-		return 1;
+		exit(EXIT_FAILURE);
 	}
-
-	std::cout << "EVALUATION DEMO ONLY" << std::endl;
 
 	/*** Define CLIah Arguments ***********************************************/
 	//CLIah::Config::verbose = true; //Set verbosity when match is found
@@ -169,95 +177,128 @@ int main(int argc, char *argv[]){
 		"-b"
 	);
 
-	/***TODO User Argument handling ***********************************************/
+	//Start address offset (bytes)
+	CLIah::addNewArg(
+		"Offset",
+		"--offset",
+		CLIah::ArgType::subcommand,
+		"-o"
+	);
+
+	CLIah::addNewArg("Jedec", "--jedec", CLIah::ArgType::flag);
+	CLIah::addNewArg("Write", "--write", CLIah::ArgType::flag, "-w");
+	CLIah::addNewArg("Erase", "--erase", CLIah::ArgType::flag, "-e");
+	CLIah::addNewArg("Interface", "--interface", CLIah::ArgType::subcommand, "-i");
+
+	/*** User Argument handling ***************************************************/
 	//Get CLIah to scan the CLI Args
 	CLIah::analyseArgs(argc, argv);
 	
-	//If no arguments or strings were given, error with usage
 	if( argc == 1 ) {
 		std::cout << message::shortHelp << std::endl;
+		gpioTerminate();
 		exit(EXIT_FAILURE);
 	}
 	
-	//If help was requested, print the long help message then exit.
 	if( CLIah::isDetected("Help") ) {
 		std::cout << message::longHelp << message::copyright << std::endl;
+		gpioTerminate();
 		exit(EXIT_SUCCESS);
 	}
 	
+	/*** JEDEC-only: read and print ID then exit ******************************/
+	if( CLIah::isDetected("Jedec") ) {
+		Device dev;
+		dev.interface = IFACE::SPI;
+		dev.protocol = PROT::S25;
+		dev.KHz = CLIah::isDetected("Speed") ? convertKHz(CLIah::getSubstring("Speed")) : 100;
+		if (dev.KHz < 0) { gpioTerminate(); exit(EXIT_FAILURE); }
+		if (splasher::readJedecId(dev)) {
+			std::cout << "JEDEC ID: " << std::hex
+			          << "0x" << (int)dev.jedecId.manufacturer << " "
+			          << "0x" << (int)dev.jedecId.memoryType << " "
+			          << "0x" << (int)dev.jedecId.capacity << std::dec << std::endl;
+			gpioTerminate();
+			exit(EXIT_SUCCESS);
+		} else {
+			std::cerr << "Failed to read JEDEC ID" << std::endl;
+			gpioTerminate();
+			exit(EXIT_FAILURE);
+		}
+	}
+	
 	/*** Filename handling ****************************************************/
-	//Get the user input filename, error if one is not provided
 	if( CLIah::stringVector.size() == 0 ) {
 		std::cerr << "Error: No filename provided" << std::endl;
+		gpioTerminate();
 		exit(EXIT_FAILURE);
 	}
 	const char *filename = CLIah::stringVector.at(0).string.c_str();
 
-	//Open a bin file, force write for now.
-	binFile = new BinFile( filename, 'w' );
-	
-	
-	/*** Device creation ******************************************************/
-	/*
-	struct Device {
-		IFACE interface;      //What interface is the device using?
-		PROT protocol;        //What protocol is the device compat with?
-		int KHz;     //How fast the device is in KHz (0 = max speed)
-		unsigned long bytes;  //How many bytes does the device store
-		unsigned long offset; //How many bytes to offset the read position
-	}; //struct Device
-	*/
-	
-	//Primary Device object created
 	Device priDev;
-	
-	/*** Get KHz speed of device **********************************************/
-	if( CLIah::isDetected("Speed") ) {
-		//Convert the KHz string into an int
-		int KHzVal = convertKHz( CLIah::getSubstring("Speed") );
-		
-		//If the return int is one of the -x errors, exit
-		if(KHzVal < 0) exit(EXIT_FAILURE);
-		
-		priDev.KHz = KHzVal;
-		
+	priDev.offset = 0;
+	if (CLIah::isDetected("Interface")) {
+		std::string iface = CLIah::getSubstring("Interface");
+		if (iface == "spi")  { priDev.interface = IFACE::SPI;  priDev.protocol = PROT::S25; }
+		else if (iface == "dspi") { priDev.interface = IFACE::DSPI; priDev.protocol = PROT::S25; }
+		else if (iface == "qspi") { priDev.interface = IFACE::QSPI; priDev.protocol = PROT::S25; }
+		else if (iface == "i2c")  { priDev.interface = IFACE::I2C;  priDev.protocol = PROT::S24; }
+		else {
+			std::cerr << "Unknown interface: " << iface << " (use spi, dspi, qspi, i2c)" << std::endl;
+			gpioTerminate();
+			exit(EXIT_FAILURE);
+		}
 	} else {
-		//If no user input, warn that default is being used, and set it
-		std::cout << message::speedDefault; //TODO Remove this message to funct
+		priDev.interface = IFACE::SPI;
+		priDev.protocol = PROT::S25;
+	}
+	
+	if( CLIah::isDetected("Speed") ) {
+		int KHzVal = convertKHz( CLIah::getSubstring("Speed") );
+		if(KHzVal < 0) { gpioTerminate(); exit(EXIT_FAILURE); }
+		priDev.KHz = KHzVal;
+	} else {
 		priDev.KHz = 100;
 	}
 	
-	/*** Get bytes to read from device ****************************************/
-	//Get bytes from user if specified TODO add auto detect
+	bool needBytes = !CLIah::isDetected("Erase") || CLIah::isDetected("Write");
 	if( CLIah::isDetected("Bytes") ) {
 		unsigned long byteVal = convertBytes( CLIah::getSubstring("Bytes") );
-		
-		//If byteVal is 0, either via passed val, or due to error, exit
-		if(byteVal == 0) exit(EXIT_FAILURE);
-		
-		priDev.bytes = byteVal;		
-	} else {
+		if(byteVal == 0) { gpioTerminate(); exit(EXIT_FAILURE); }
+		priDev.bytes = byteVal;
+	} else if (needBytes) {
 		std::cerr << message::bytesNotSpecified;
+		gpioTerminate();
 		exit(EXIT_FAILURE);
 	}
 	
+	if( CLIah::isDetected("Offset") ) {
+		unsigned long offsetVal = convertBytes( CLIah::getSubstring("Offset") );
+		if(offsetVal == 0) {
+			std::cerr << message::offsetNotValid;
+			gpioTerminate();
+			exit(EXIT_FAILURE);
+		}
+		priDev.offset = offsetVal;
+	}
 	
+	if (CLIah::isDetected("Erase")) {
+		unsigned long eraseCount = CLIah::isDetected("Bytes") ? priDev.bytes : 0;
+		splasher::eraseFlash(priDev, eraseCount);
+		gpioTerminate();
+		return 0;
+	}
 	
+	if (CLIah::isDetected("Write")) {
+		BinFile binFile(filename, 'r');
+		splasher::writeFileToFlash(priDev, binFile);
+		gpioTerminate();
+		return 0;
+	}
 	
-	
-	
-	
-	splasher::dumpFlashToFile(priDev, *binFile);
-	
-	
-	
-	
-	
-	
-	//Delete the BinFile object to force its desturctor to call. Closes file
-	delete binFile;
+	BinFile binFile(filename, 'w');
+	splasher::dumpFlashToFile(priDev, binFile);
 
-	//Terminate the GPIO handler and exit
-	//gpioTerminate();
+	gpioTerminate();
 	return 0;
 } 

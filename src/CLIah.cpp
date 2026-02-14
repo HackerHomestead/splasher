@@ -145,37 +145,36 @@ void analyseArgs(int argc, char *argv[]) {
 		//Convert curent argv char[] to string
 		std::string inputArg = argv[argStrIdx];
 		
-		//Loop through all Args stored in argVector. Use iterator
 		std::vector<Arg>::iterator itrtr; 
 		for(itrtr = argVector.begin(); itrtr != argVector.end(); itrtr++) {
-
-			 
-			//Set matched flag to the return bool of argStringsMatch and check it 
-			if( (matchFound = argStringsMatch(*itrtr, inputArg)) == true) {
+			// Variable type: match on part before '=' (e.g. --speed=100)
+			std::string matchInput = inputArg;
+			if (itrtr->type == ArgType::variable) {
+				size_t eq = inputArg.find('=');
+				if (eq != std::string::npos)
+					matchInput = inputArg.substr(0, eq);
+			}
+			if( (matchFound = argStringsMatch(*itrtr, matchInput)) == true) {
 			
-				/*** Arg Type detection ***************************************/
-				//Get the matched argument type to do specific execution.
 				CLIah::ArgType tempType = itrtr->type;
 				
-				//If the Arg is a Flag Type, no special executuion takes place
-				//Flag type --
-				
-				//If the Arg is Subcommand type, get the next inputArg string,
-				//set the substring of the main object
 				if(tempType == CLIah::ArgType::subcommand) {
-					//Make sure there *IS* a next argument, if not fatal error.
 					if(argStrIdx + 1 >= argc) {
-						//Print error message and exit.
 						argError(1, *itrtr);
 					}
-					
-					//Incriment argStrIdx to get the substring, and the next
-					//loop will go past it
 					++argStrIdx;
 					itrtr->substring = (std::string)argv[argStrIdx];
 				}
 				
-				//TODO Variable type	
+				// Variable type: --key=value or -k=value; substring is value
+				if(tempType == CLIah::ArgType::variable) {
+					size_t eq = inputArg.find('=');
+					if(eq != std::string::npos && eq + 1 < inputArg.length()) {
+						itrtr->substring = inputArg.substr(eq + 1);
+					} else {
+						argError(1, *itrtr);
+					}
+				}
 				
 				/*** Constant execution when a match is found *****************/
 				//Set the current argVector object detection flag to true

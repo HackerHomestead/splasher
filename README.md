@@ -1,4 +1,4 @@
-﻿# splasher
+# splasher
 
 splasher, Software Pi Flasher, is a Raspberry Pi program with the ability to 
 flash, dump, clone and erase SPI/I2C/DSPI/QSPI flash chips, including the 24 and
@@ -11,8 +11,6 @@ interfaces, or damaged chips, up to 1MHz limited interface for older but regular
 chips. It also allows "max" to be passed to the speed flag, in order to delimit
 the interface (This varies wildly between 2MHz to 50MHz depending on model. be
 aware of this before use)
-
-WORK IN PROGRESS
 
 ## How To Use
 When running splasher, you will need to use `sudo`, this is normal, and is a
@@ -34,24 +32,24 @@ CS      27
 WP      22
 ```
 
-It sould be identical between Pi1, Pi2, Pi3, Pi4, PiZero etc.
+It should be identical between Pi1, Pi2, Pi3, Pi4, PiZero etc.
 **Raspberry Pi 1 REVISION 1 Boards are not supported with the standard pinout**
 
-The inbuilt help (`splasher --help`) will have more info, but for a basic 
-rundown of the programs arguments:  
-* -b or --bytes		This can be followed with 123456, 10K (10 KiB) or 16M (16 MiB)
-* -s or --speed		This allows you to specify the speed of splasher in KHz 
-(Not yet working). You can pass any number up to 1000, or max to delimit the bus
-speed and read/write faster. Be aware this can change drastically per Pi model.
+For full options and examples, run **`splasher --help`**. Summary of arguments:  
+* -b or --bytes		How many bytes (required for dump/write). e.g. 123456, 10K, 16M
+* -s or --speed		SPI speed in KHz (1–1000), or `max` for unconstrained
+* -o or --offset		Start address in bytes (default 0). Supports K and M suffix
+* --jedec		Read and print JEDEC ID (manufacturer, type, capacity) then exit
+* -w or --write		Flash (write) file to device; requires -b; use -o for address
+* -e or --erase		Erase device: full chip, or from -o for -b bytes
+* -i or --interface	Interface: spi (default), dspi, qspi, i2c (dspi/qspi/i2c stubs)
 
 ## Notes
-I have not been able to validate the output of splasher yet, but i will soon
-
-(DSPI, QSPI and I2C are under construction. Only spi mode is working)
+(DSPI, QSPI and I2C are stubbed; only SPI/25-series is fully implemented.)
 
 ----
 ## Dependencies
-This program requires that you have the pigpio library istalled.  
+This program requires that you have the pigpio library installed.  
 A tutorial of how to do this is [here](https://abyz.me.uk/rpi/pigpio/download.html)
 
 ## Compilation
@@ -65,15 +63,27 @@ sudo make install
 ```
 
 ## Usage
-TODO
+Run with `sudo` (required by pigpio). Examples:
 
-## TODO
-* JEDEC ID
-* DSPI
-* QSPI
-* I2C
-* init read / init write
-* inherited class members (for expansion)
+```bash
+# Dump 16 MiB from flash to file (default offset 0, 100 KHz)
+sudo splasher output.bin -b 16M
+
+# Dump at 500 KHz, starting at offset 64 KiB
+sudo splasher out.bin -b 16M -s 500 -o 64K
+
+# Read JEDEC ID only
+sudo splasher --jedec
+
+# Flash (write) a file to device at offset 0
+sudo splasher firmware.bin -b 256K -w
+
+# Erase full chip
+sudo splasher /dev/null -e
+
+# Erase 64 KiB starting at offset 0
+sudo splasher /dev/null -b 64K -o 0 -e
+```
 
 ----
 ## Licence
